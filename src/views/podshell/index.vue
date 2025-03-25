@@ -64,7 +64,7 @@ export default {
       this.fitAddon.fit()
       this.term.focus()
 
-      this.connection = connectTerminal(this.term,"/execute/shell")
+      this.connection = connectTerminal(this.term,"/execute/podshell")
 
       window.addEventListener('resize', this.handleResize)
     },

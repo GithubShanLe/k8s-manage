@@ -1,63 +1,47 @@
-const { EventEmitter } = require('events');
+let ws = null;
 
-const WS_ENDPOINTS = {
-  SHELL: '/execute/shell',
-  POD_SHELL: '/execute/podshell'
-};
+export function connectTerminal(term,url) {
+  ws = new WebSocket(url);
 
-class TerminalSocket {
-  constructor(endpoint) {
-    this.socket = null;
-    this.isOpen = false;
-    this.eventEmitter = new EventEmitter();
-    this.endpoint = endpoint;
-    this.initWebSocket();
-  }
+  ws.onopen = () => {
+    console.log('WebSocket connected');
+    term.onData(data => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      }
+    });
+  };
 
-  initWebSocket() {
-  
-    // 将参数转换为查询字符串格式，用于 WebSocket 连接
-    this.socket = new WebSocket(this.endpoint);
-    this.socket.onopen = () => {
-      console.log(`WebSocket ${this.endpoint} 连接已打开`);
-      this.isOpen = true;
-    };
-
-    this.socket.onmessage = (event) => {
-      console.log(`收到消息 from ${this.endpoint}:`, event.data);
-      this.eventEmitter.emit('message', event.data);
-    };
-
-    this.socket.onclose = () => {
-      console.log(`WebSocket ${this.endpoint} 连接已关闭`);
-      this.isOpen = false;
-    };
-
-    this.socket.onerror = (error) => {
-      console.error(`WebSocket ${this.endpoint} 连接发生错误:`, error);
-      this.isOpen = false;
-    };
-  }
-
-  send(data) {
-    if (this.isOpen) {
-      this.socket.send(JSON.stringify(data));
-      return this.eventEmitter;
+  ws.onmessage = event => {
+    if (event.data instanceof Blob) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = new Uint8Array(reader.result);
+        term.write(data);
+      };
+      reader.readAsArrayBuffer(event.data);
     } else {
-      console.error(`WebSocket ${this.endpoint} 连接未打开`);
-      return Promise.reject(new Error('WebSocket 连接未打开'));
+      term.write(event.data);
     }
-  }
-}
+  };
 
-const shellSocket = new TerminalSocket(WS_ENDPOINTS.SHELL);
-const podShellSocket =new TerminalSocket(WS_ENDPOINTS.POD_SHELL);
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    term.write('\r\n\nWebSocket error occurred\r\n');
+  };
 
+  ws.onclose = (event) => {
+    console.log('WebSocket closed:', event.code, event.reason);
+    term.write('\r\n\nConnection closed\r\n');
+    ws = null;
+  };
 
-export function withTerminal(data) {
-  return shellSocket.send(data);
-}
-
-export function withPodTerminal(data) {
-  return podShellSocket.send(data);
+  return {
+    disconnect: () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        ws = null;
+      }
+    }
+  };
 }
