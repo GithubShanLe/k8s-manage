@@ -36,9 +36,12 @@
         style="width: 100%">
         <el-table-column label="名称" min-width="30" show-overflow-tooltip>
           <template slot-scope="{ row }">
-            <router-link :to="{ name: 'PodExec', query: { namespace: row.namespace, podName: row.name } }">
+            <el-button 
+              type="text" 
+              @click="handleExec(row)"
+            >
               {{ row.name }}
-            </router-link>
+            </el-button>
           </template>
         </el-table-column>
         <el-table-column prop="namespace" label="命名空间" width="180"  />  
@@ -126,6 +129,16 @@ toggleLabels(index) {
 },
 handleNamespaceChange() {
       this.fetchData()
+    },
+    handleExec(row) {
+      console.log('跳转到终端页面:', row.namespace, row.name);
+      this.$router.push({
+        path: '/k8s/pod/exec',
+        query: {
+          namespace: row.namespace,
+          podName: row.name
+        }
+      });
     },
 async getNamespaces() {
   try {
