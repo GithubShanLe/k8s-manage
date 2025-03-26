@@ -66,9 +66,30 @@ export const constantRoutes = [
     children: [
       {
         path: 'rbac',
-        component: () => import('@/views/k8s/rbac/index'),
         name: 'rbac',
-        meta: { title: 'rbac'}
+        meta: { title: 'rbac'},
+        alwaysShow: true,
+        component: { render: h => h('router-view') },
+        children: [
+          {
+            path: 'index',
+            component: () => import('@/views/k8s/rbac/index'),
+            name: 'rbacIndex',
+            meta: { title: 'rbac管理' }
+          },
+          {
+            path: 'role',
+            component: () => import('@/views/k8s/rbac/role'),
+            name: 'role',
+            meta: { title: 'role管理' }
+          },
+          {
+            path: 'clusterrole',
+            component: () => import('@/views/k8s/rbac/clusterrole'),
+            name: 'clusterrole',
+            meta: { title: 'clusterrole管理' }
+          }
+        ]
       },
       {
         path: 'nodepool',

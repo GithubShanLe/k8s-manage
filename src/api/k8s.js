@@ -203,3 +203,19 @@ export function getPodMetrics(data) {
     data:data
   })
 }
+
+export function listRole(data) {
+  return request({
+    url: '/rbac/role/list',
+    method: 'post',
+    data:data
+  })
+}
+
+export function listClusterRole(data) {
+  return request({
+    url: '/rbac/clusterrole/list',
+    method: 'post',
+    data:data
+  })
+}
