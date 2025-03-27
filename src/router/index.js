@@ -164,8 +164,8 @@ export const constantRoutes = [
         meta: { title: 'webshell'}
       },
       {
-        path: '/k8s/pod/exec',
-        component: () => import('@/views/k8s/pod/exec'),
+        path: '/terminal/exec',
+        component: () => import('@/views/terminal/exec'),
         name: 'PodExec',
       }
     ]

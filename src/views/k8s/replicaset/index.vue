@@ -30,7 +30,7 @@
       </div>
       <el-table 
         :data="replicasets" 
-        border 
+        border
         stripe
         style="width: 100%">
         <el-table-column prop="name" label="名称"  min-width="30" show-overflow-tooltip/>

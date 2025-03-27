@@ -22,7 +22,58 @@
         查询
       </el-button>
     </div>
+    <el-dialog
+  :title="`编辑 Pod - ${currentPod.name}`"
+  :visible.sync="yamlDialogVisible"
+  width="80%"
+  :fullscreen="true"
+  top="5vh"
+  custom-class="yaml-dialog">
+  <monaco-editor
+    ref="yamlEditor"
+    v-model="podYaml"
+    language="yaml"
+    theme="vs-dark"
+    :options="{
+      minimap: { enabled: true },
+      fontSize: 13,
+      lineNumbers: 'on',
+      roundedSelection: false,
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      tabSize: 0,
+      insertSpaces: true,
+      autoClosingBrackets: 'always',
+      formatOnType: true,
+      glyphMargin: true,
+      lightbulb: { enabled: true },
+      renderIndentGuides: true,
+      scrollbar: { vertical: 'auto' },
+      wordWrap: 'on'
+    }"
+    style="height: 75vh; border-radius: 4px; border: 1px solid #434343;"
+  />
+  <div slot="footer" class="dialog-footer">
+    <el-button @click="yamlDialogVisible = false">取消</el-button>
+    <el-button type="primary" @click="handleUpdateYaml">保存</el-button>
+  </div>
+</el-dialog>
         <!-- 节点列表 -->
+        <el-dialog
+      :title="`Pod终端 - ${currentPod.podName}`"
+      :visible.sync="terminalVisible"
+      :before-close="handleCloseTerminal"
+      width="80%"
+      :fullscreen="true"
+      custom-class="terminal-dialog"
+    >
+      <terminal-exec
+        v-if="terminalVisible"
+        :namespace="currentPod.nameSpace"
+        :pod-name="currentPod.podName"
+        @close="terminalVisible = false"
+      />
+    </el-dialog>
     <el-card shadow="hover" class="mt-20 info-card">
       <div slot="header" class="sub-header">
         <i class="el-icon-cpu"></i> pod列表
@@ -34,16 +85,7 @@
         border 
         stripe
         style="width: 100%">
-        <el-table-column label="名称" min-width="30" show-overflow-tooltip>
-          <template slot-scope="{ row }">
-            <el-button 
-              type="text" 
-              @click="handleExec(row)"
-            >
-              {{ row.name }}
-            </el-button>
-          </template>
-        </el-table-column>
+        <el-table-column prop="name" label="名称" width="180"  />  
         <el-table-column prop="namespace" label="命名空间" width="180"  />  
         <el-table-column prop="images" label="镜像" min-width="30" show-overflow-tooltip />   
           <el-table-column label="标签" min-width="50" show-overflow-tooltip>
@@ -90,29 +132,78 @@
               {{ row.metric && row.metric.memoryLimitRate !== undefined ? `${row.metric.memoryLimitRate}%` : 'N/A' }}
             </template>
           </el-table-column>
-          
         <el-table-column prop="createTime" label="创建时间" width="180" />
+        <el-table-column label="操作" width="200">
+          <template slot-scope="{ row }">
+            <span class="mat-button-wrapper">
+              <el-tooltip :content="row.status === 'Running' ? '查看日志' : 'Pod未运行'" placement="top">
+                <el-button
+                  type="text"
+                  size="mini"
+                  icon="el-icon-document"
+                  :disabled="row.status !== 'Running'"
+                  @click="handleViewLogs(row)"
+                />
+              </el-tooltip>
+              <el-tooltip content='编辑' placement="top">
+                <el-button
+                  type="text"
+                  size="mini"
+                  icon="el-icon-edit"
+                  @click="handleEdit(row)"
+                />
+              </el-tooltip>
+              <el-tooltip :content="row.status === 'Running' ? '终端' : 'Pod未运行'" placement="top">
+                <el-button
+                  type="text"
+                  size="mini"
+                  icon="el-icon-monitor"
+                  :disabled="row.status !== 'Running'"
+                  @click="handleExec(row)"
+                />
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button
+                  type="text"
+                  size="mini"
+                  icon="el-icon-delete"
+                  @click="handleDelete(row)"
+                />
+              </el-tooltip>
+            </span>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </el-card>
 </template>
-
 <script>
-
 import { listPod, getPodMetrics, getNamespaces } from '@/api/k8s'  // 添加 listNamespace 导入
+import TerminalExec from '@/views/terminal/exec.vue'
+import yaml from 'js-yaml'
+import MonacoEditor from 'vue-monaco'
 export default {
+  components: {
+    TerminalExec,
+    MonacoEditor
+  },
 data() {
-return {
-  listLoading: false,
-  pods: [],
-  labels: {},  // 初始化 labels 为空对象
-  labelsFolded: true,  // 添加折叠状态控制
-  namespaces: [], // 添加命名空间列表
-  queryParams: {
-    nameSpace: localStorage.getItem('lastNamespace') || 'default',
-    podName: ''
+  return {
+    listLoading: false,
+    pods: [],
+    labels: {},
+    labelsFolded: true,
+    namespaces: [],
+    queryParams: {
+      nameSpace: localStorage.getItem('lastNamespace') || 'default',
+      podName: ''
+    },
+    // 添加 currentPod 属性
+    currentPod: {},
+    terminalVisible: false,
+    yamlDialogVisible: false,
+    podYaml: '',
   }
-}
 },
 async mounted() {
 this.getNamespaces()
@@ -129,16 +220,6 @@ toggleLabels(index) {
 },
 handleNamespaceChange() {
       this.fetchData()
-    },
-    handleExec(row) {
-      console.log('跳转到终端页面:', row.namespace, row.name);
-      this.$router.push({
-        path: '/k8s/pod/exec',
-        query: {
-          namespace: row.namespace,
-          podName: row.name
-        }
-      });
     },
 async getNamespaces() {
   try {
@@ -210,7 +291,84 @@ async fetchData() {
   } finally {
     this.listLoading = false
   }
-}
+},
+    handleExec(row) {
+      console.log('跳转到终端页面:', row.namespace, row.name);
+      this.$router.push({
+        path: '/terminal/exec',
+        query: {
+          namespace: row.namespace,
+          podName: row.name
+        }
+      });
+    },
+    
+    // 添加关闭终端的处理方法
+    handleCloseTerminal(done) {
+      this.$confirm('确认关闭终端？')
+        .then(() => {
+          this.currentPod = {}
+          done()
+        })
+        .catch(() => {})
+    },
+    handleViewLogs(row) {
+      // TODO: 实现查看日志功能
+      console.log('查看日志:', row.namespace, row.name)
+    },
+    handleEdit(row) {
+      try {
+    this.currentPod = row
+    this.yamlDialogVisible = true
+    // 将对象转换为 YAML 格式
+    this.podYaml =yaml.dump(JSON.parse(row.yaml))
+    console.log('YAML 格式:', this.podYaml)
+  } catch (error) {
+    this.$message.error('转换 YAML 失败：' + error.message)
+  }
+    },
+    handleDelete(row) {
+      this.$confirm('此操作将永久删除该 Pod, 是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(async () => {
+        try {
+          // TODO: 调用删除 API
+          this.$message.success('删除成功')
+          this.fetchData() // 刷新列表
+        } catch (error) {
+          this.$message.error('删除失败：' + error.message)
+        }
+      }).catch(() => {
+        this.$message.info('已取消删除')
+      })
+    },
+    async handleUpdateYaml() {
+    try {
+      // 验证 YAML 格式
+      const yamlObj = yaml.load(this.podYaml)
+      
+      // TODO: 调用更新接口
+      // await updatePodYaml(yamlObj)
+      
+      this.$message.success('配置更新成功')
+      this.yamlDialogVisible = false
+      this.fetchData() // 刷新列表
+    } catch (error) {
+      this.$message.error(`YAML 格式错误: ${error.message}`)
+      const editor = this.$refs.yamlEditor.getEditor()
+      const marker = {
+        severity: monaco.MarkerSeverity.Error,
+        message: error.message,
+        startLineNumber: error.mark.line + 1,
+        startColumn: error.mark.column + 1,
+        endLineNumber: error.mark.line + 1,
+        endColumn: error.mark.column + 2
+      }
+      monaco.editor.setModelMarkers(editor.getModel(), 'yaml', [marker])
+    }
+  }
 }
 }
 </script>
@@ -275,7 +433,6 @@ color: #303133;
 .filter-item {
   margin-right: 10px;
 }
-</style>
 .tag-container {
   display: flex;
   flex-direction: column; /* 改为垂直布局 */
@@ -290,6 +447,34 @@ color: #303133;
   width: 100%; /* 标签占满容器宽度 */
   margin: 10; /* 移除默认边距 */
   justify-content: flex-start; /* 左对齐文本 */
+}
+/* 添加终端弹窗相关样式 */
+:deep(.terminal-dialog) {
+  display: flex;
+  flex-direction: column;
+  margin: 0 !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+:deep(.terminal-dialog .el-dialog__body) {
+  flex: 1;
+  padding: 0;
+  height: calc(100vh - 120px);
+  overflow: hidden;
+}
+.yaml-dialog .el-dialog__body {
+  padding: 10px 20px;
+  background: #1e1e1e;
+}
+
+.yaml-dialog .el-dialog__header {
+  border-bottom: 1px solid #434343;
+}
+
+.yaml-dialog .el-dialog__footer {
+  border-top: 1px solid #434343;
+  padding: 10px 20px;
 }
 </style>
 
