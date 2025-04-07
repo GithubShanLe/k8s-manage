@@ -8,6 +8,27 @@ const request = axios.create({
   timeout: 50000, // 设置超时时间
 });
 
+
+export function dashboard() {
+  return request({
+    url: '/dashboard', // 相对路径，已包含在 baseURL 中
+    method: 'get'
+  })
+  .then(response => {
+    // 校验后端返回的数据结构是否符合预期
+    if ( response && response.status === 200) {
+      return response.data
+    } else {
+      throw new Error('Invalid response format from server');
+    }
+  })
+  .catch(error => {
+    // 捕获并处理异常，避免未捕获的错误
+    console.error('Error fetching dashboard:', error);
+    return []; // 返回空数组作为默认值，防止调用方收到 undefined
+  });
+}
+
 export function getNamespaces() {
   return request({
     url: '/ns', // 相对路径，已包含在 baseURL 中
@@ -170,6 +191,13 @@ export function listPod(data) {
     data:data
   })
 }
+export function deletePod(data) {
+  return request({
+    url: '/workload/pod/delete',
+    method: 'post',
+    data:data
+  })
+}
 
 export function listJob(data) {
   return request({
@@ -215,6 +243,31 @@ export function listRole(data) {
 export function listClusterRole(data) {
   return request({
     url: '/rbac/clusterrole/list',
+    method: 'post',
+    data:data
+  })
+}
+
+export function listClusterRoleBinding(data) {
+  return request({
+    url: '/rbac/clusterrolebinding/list',
+    method: 'post',
+    data:data
+  })
+}
+
+
+export function listRoleBinding(data) {
+  return request({
+    url: '/rbac/rolebinding/list',
+    method: 'post',
+    data:data
+  })
+}
+
+export function getNodeMetrics(data) {
+  return request({
+    url: '/node/metrics',
     method: 'post',
     data:data
   })

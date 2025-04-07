@@ -84,6 +84,18 @@ export const constantRoutes = [
             meta: { title: 'role管理' }
           },
           {
+            path: 'rolebinding',
+            component: () => import('@/views/k8s/rbac/rolebinding'),
+            name: 'rolebinding',
+            meta: { title: 'rolebinding管理' }
+          },
+          {
+            path: 'clusterrolebinding',
+            component: () => import('@/views/k8s/rbac/clusterrolebinding'),
+            name: 'clusterrolebinding',
+            meta: { title: 'clusterrolebinding管理' }
+          },
+          {
             path: 'clusterrole',
             component: () => import('@/views/k8s/rbac/clusterrole'),
             name: 'clusterrole',

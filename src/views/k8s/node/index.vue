@@ -14,7 +14,16 @@
             style="width: 100%">
             <el-table-column prop="name" label="节点名称" min-width="50" show-overflow-tooltip />
             <el-table-column prop="nodeIp" label="IP" width="140" />
-            <el-table-column label="CPU(R/L)" width="200">
+            <el-table-column label="CPU使用率" width="200">
+              <template slot-scope="scope">
+                <el-progress 
+                  :percentage="calculateCpuUsage1(scope.row)" 
+                  :color="getResourceColor1(calculateCpuUsage1(scope.row))"
+                  :format="format => `${(scope.row.metric.cpuUsage*100/scope.row.limitCpu).toFixed(2)}%`"
+                ></el-progress>
+              </template>
+            </el-table-column>
+            <el-table-column label="CPU(A/C)" width="200">
               <template slot-scope="scope">
                 <el-progress 
                   :percentage="calculateCpuUsage(scope.row)" 
@@ -23,7 +32,17 @@
                 ></el-progress>
               </template>
             </el-table-column>
-            <el-table-column label="内存(R/L)" width="200">
+
+            <el-table-column label="内存使用率" width="200">
+              <template slot-scope="scope">
+                <el-progress 
+                  :percentage="calculateCpuUsage1(scope.row)" 
+                  :color="getResourceColor1(calculateCpuUsage1(scope.row))"
+                  :format="format => `${(scope.row.metric.memoryUsage*100/(scope.row.limitMem*1024*1024)).toFixed(2)}%`"
+                ></el-progress>
+              </template>
+            </el-table-column>
+            <el-table-column label="内存(A/C)" width="200">
               <template slot-scope="scope">
                 <el-progress 
                   :percentage="calculateMemUsage(scope.row)" 
@@ -32,7 +51,7 @@
                 ></el-progress>
               </template>
             </el-table-column>
-            <el-table-column label="Pod(R/L)" width="140">
+            <el-table-column label="Pod(A/C)" width="140">
               <template slot-scope="scope">
                 {{ scope.row.requestPod || 0 }}/{{ scope.row.limitPod || 0 }}
               </template>
@@ -50,7 +69,7 @@
   
   <script>
 
-  import { listNodes } from '@/api/k8s'
+  import { listNodes,getNodeMetrics } from '@/api/k8s'
   export default {
   data() {
     return {
@@ -86,7 +105,27 @@
           this.$message.error(data.errorMessage || '获取数据失败')
           return
         }
-        this.nodes = data.nodes || []
+
+         // 初始化基础数据
+    this.nodes = (data.nodes || []).map(node => ({
+      ...node,
+      metric: undefined  // 初始化为 undefined，表示数据未加载
+    }))
+    
+    // 逐个获取指标数据
+    this.nodes.forEach(async (node, index) => {
+      try {
+        const metricRes = await getNodeMetrics({
+          nodeName: node.name
+        })
+        if (metricRes.data && !metricRes.data.errorCode) {
+          this.$set(this.nodes[index], 'metric', metricRes.data.metric || {})
+        }
+      } catch (error) {
+        console.error(`获取 ${node.name} 指标失败:`, error)
+        this.$set(this.nodes[index], 'metric', {})  // 失败时设置为空对象
+      }
+    })
       } catch (error) {
         this.$message.error('请求异常：' + error.message)
       } finally {
@@ -106,16 +145,31 @@
       if (!node.limitCpu || node.limitCpu === 0) return 0
       return Math.min(100, Math.round((node.requestCpu / node.limitCpu) * 100))
     },
+    calculateCpuUsage1(node) {
+      if (!node.limitCpu || node.limitCpu === 0) return 0
+      return Math.min(100, Math.round((node.metric.cpuUsage / node.limitCpu) * 100))
+    },
+
+    calculateMemUsage1(node) {
+      if (!node.limitMem || node.limitMem === 0) return 0
+      return Math.min(100, Math.round((node.metric.memoryUsage / (node.limitMem*1024*1024)) * 100))
+    },
     // 计算内存使用率
     calculateMemUsage(node) {
       if (!node.limitMem || node.limitMem === 0) return 0
       return Math.min(100, Math.round((node.requestMem / node.limitMem) * 100))
     },
     // 根据使用率返回颜色
-    getResourceColor(percentage) {
+    getResourceColor1(percentage) {
       if (percentage < 70) return '#67C23A'
       if (percentage < 90) return '#E6A23C'
       return '#F56C6C'
+    },
+
+    getResourceColor(percentage) {
+      if (percentage > 150) return '#F56C6C'
+      if (percentage <= 100) return '#67C23A'
+      return '#E6A23C'
     }
   }
 }

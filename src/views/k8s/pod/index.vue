@@ -74,6 +74,26 @@
         @close="terminalVisible = false"
       />
     </el-dialog>
+    <el-dialog
+  :title="`Pod日志 - ${currentLogPod.podName}`"
+  :visible.sync="logDialogVisible"
+  width="80%"
+  :fullscreen="true"
+  custom-class="log-dialog">
+  <div class="log-container">
+    <el-input
+      type="textarea"
+      :autosize="{ minRows: 20 }"
+      v-model="logContent"
+      readonly
+      resize="none"
+      class="log-content"
+    />
+  </div>
+  <div slot="footer" class="dialog-footer">
+    <el-button @click="logDialogVisible = false">关闭</el-button>
+  </div>
+</el-dialog>
     <el-card shadow="hover" class="mt-20 info-card">
       <div slot="header" class="sub-header">
         <i class="el-icon-cpu"></i> pod列表
@@ -88,11 +108,10 @@
         <el-table-column prop="name" label="名称" width="180"  />  
         <el-table-column prop="namespace" label="命名空间" width="180"  />  
         <el-table-column prop="images" label="镜像" min-width="30" show-overflow-tooltip />   
-          <el-table-column label="标签" min-width="50" show-overflow-tooltip>
+          <!-- <el-table-column label="标签" min-width="50" show-overflow-tooltip>
             <template slot-scope="{ row, $index }">
               <div class="tag-container">
-                <template v-if="Object.keys(row.labels || {}).length > 0">
-                  <!-- 始终显示前三个标签 -->
+                <template v-if="Object.keys(row.labels || {}).length > 0">              
                   <div 
                     v-for="(value, key, index) in row.labels"
                     :key="key"
@@ -117,22 +136,65 @@
                 </el-button>
               </div>
             </template>
-          </el-table-column>
-          <el-table-column prop="restart" label="Restart" width="180" /> 
-          <el-table-column prop="cpu" label="cpu" width="180" /> 
-          <el-table-column prop="mem" label="mem" width="180" />
-          <el-table-column prop="cpu" label="Cpu使用率" width="180" />
-          <el-table-column label="CPU限制率" width="120">
+          </el-table-column> -->
+          <el-table-column prop="restart" label="restart" width="120" /> 
+          <el-table-column prop="containersState" label="ready" width="120" /> 
+
+          <!-- 合并CPU相关列 -->
+          <el-table-column label="CPU使用情况" width="220">
             <template slot-scope="{ row }">
-              {{ row.metric && row.metric.cpuLimitRate !== undefined ? `${row.metric.cpuLimitRate}%` : 'N/A' }}
+              <div class="metric-container">
+                <div class="metric-item">
+                  <span class="metric-label">使用率：</span>
+                  <el-progress 
+                    :percentage="(row.metric && row.metric.cpuRequestRate) || 0" 
+                    color="#409EFF"
+                    :show-text="false"
+                    stroke-width="12"
+                  />
+                  <span class="metric-value">{{ (row.metric && row.metric.cpuRequestRate) || 0 }}%</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-label">限制率：</span>
+                  <el-progress 
+                    :percentage="(row.metric && row.metric.cpuLimitRate) || 0" 
+                    status="warning"
+                    :show-text="false"
+                    stroke-width="12"
+                  />
+                  <span class="metric-value">{{ (row.metric && row.metric.cpuLimitRate) || 0 }}%</span>
+                </div>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="内存限制率" width="120">
+          
+          <el-table-column label="内存使用情况" width="220">
             <template slot-scope="{ row }">
-              {{ row.metric && row.metric.memoryLimitRate !== undefined ? `${row.metric.memoryLimitRate}%` : 'N/A' }}
+              <div class="metric-container">
+                <div class="metric-item">
+                  <span class="metric-label">使用率：</span>
+                  <el-progress 
+                    :percentage="(row.metric && row.metric.memoryReuqestRate) || 0" 
+                    color="#67C23A"
+                    :show-text="false"
+                    stroke-width="12"
+                  />
+                  <span class="metric-value">{{ (row.metric && row.metric.memoryReuqestRate) || 0 }}%</span>
+                </div>
+                <div class="metric-item">
+                  <span class="metric-label">限制率：</span>
+                  <el-progress 
+                    :percentage="(row.metric && row.metric.memoryLimitRate) || 0" 
+                    status="warning"
+                    :show-text="false"
+                    stroke-width="12"
+                  />
+                  <span class="metric-value">{{ (row.metric && row.metric.memoryLimitRate) || 0 }}%</span>
+                </div>
+              </div>
             </template>
           </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180" />
+          <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column label="操作" width="200">
           <template slot-scope="{ row }">
             <span class="mat-button-wrapper">
@@ -178,7 +240,8 @@
   </el-card>
 </template>
 <script>
-import { listPod, getPodMetrics, getNamespaces } from '@/api/k8s'  // 添加 listNamespace 导入
+import { listPod, getPodMetrics, getNamespaces,deletePod } from '@/api/k8s'  // 添加 listNamespace 导入
+import { createWebSocket} from '@/api/log' 
 import TerminalExec from '@/views/terminal/exec.vue'
 import yaml from 'js-yaml'
 import MonacoEditor from 'vue-monaco'
@@ -203,11 +266,29 @@ data() {
     terminalVisible: false,
     yamlDialogVisible: false,
     podYaml: '',
+    // 添加日志相关属性
+    logDialogVisible: false,
+    logContent: '',
+    currentLogPod: {
+      namespace: '',
+      podName: ''
+    },
   }
 },
 async mounted() {
 this.getNamespaces()
 this.fetchData()
+},
+// 添加 watch 监听
+
+  watch: {
+  logDialogVisible(newVal) {
+    // 只在弹窗关闭时断开连接
+    if (!newVal && this.ws) {
+      this.ws.disconnect()
+      this.logContent = ''
+    }
+  }
 },
 methods: {
 toggleLabels(index) {
@@ -313,9 +394,41 @@ async fetchData() {
         .catch(() => {})
     },
     handleViewLogs(row) {
-      // TODO: 实现查看日志功能
-      console.log('查看日志:', row.namespace, row.name)
+      console.log('查看日志:', row.namespace, row.name);
+  this.currentLogPod = {
+    namespace: row.namespace,
+    podName: row.name
+  }
+  this.logContent = '' // 清空旧日志
+  
+  // 先显示弹窗，不等待WebSocket连接
+  this.logDialogVisible = true
+  this.logContent = `正在连接 ${row.name} 日志...\n\n`
+  
+  this.ws = createWebSocket({
+    url: `/execute/podlogs?namespace=${row.namespace}&podName=${row.name}`,
+    onOpen: () => {
+      this.logContent = `=== 开始接收 ${row.name} 日志 ===\n\n`
     },
+    onMessage: (data) => {
+      this.logContent += data
+      // 自动滚动到底部
+      this.$nextTick(() => {
+        const textarea = document.querySelector('.log-content textarea')
+        if (textarea) {
+          textarea.scrollTop = textarea.scrollHeight
+        }
+      })
+    },
+    onError: (err) => {
+      this.$notify.error({ title: '连接异常', message: err.message })
+      this.logContent += `\n\n连接异常: ${err.message}\n`
+    },
+    onClose: () => {
+      this.logContent += '\n\n=== 日志连接已关闭 ==='
+    }
+  })
+},
     handleEdit(row) {
       try {
     this.currentPod = row
@@ -335,6 +448,10 @@ async fetchData() {
       }).then(async () => {
         try {
           // TODO: 调用删除 API
+          deletePod({
+            namespace: row.namespace,
+            podName: row.name
+          }) 
           this.$message.success('删除成功')
           this.fetchData() // 刷新列表
         } catch (error) {
@@ -473,6 +590,54 @@ color: #303133;
 }
 
 .yaml-dialog .el-dialog__footer {
+  border-top: 1px solid #434343;
+  padding: 10px 20px;
+}
+
+/* 添加日志弹窗相关样式 */
+.log-container {
+  padding: 10px;
+  background: #000;
+  border-radius: 4px;
+  height: calc(100vh - 200px);
+  overflow: auto;
+}
+
+.log-content {
+  font-family: 'Monaco', monospace;
+  font-size: 12px;
+  height: 100%;
+}
+
+/* 使用 >>> 深度选择器 (Vue 2) */
+.log-content >>> .el-textarea__inner {
+  background-color: #000 !important;
+  color: #00ff00 !important;
+  cursor: text !important;
+  border: none !important;
+  height: 100% !important;
+}
+
+.log-dialog >>> .el-dialog {
+  display: flex;
+  flex-direction: column;
+  margin: 0 !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.log-dialog >>> .el-dialog__body {
+  flex: 1;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.log-dialog >>> .el-dialog__header {
+  border-bottom: 1px solid #434343;
+  padding: 15px 20px;
+}
+
+.log-dialog >>> .el-dialog__footer {
   border-top: 1px solid #434343;
   padding: 10px 20px;
 }
